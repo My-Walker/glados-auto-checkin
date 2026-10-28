@@ -10,6 +10,8 @@
 const DEFAULT_DOMAIN = 'glados.cloud'
 const DEFAULT_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'
+/** 北京时间：此前仅接受 bonus≥8；此后可接受 ≥5 */
+const PREFER8_UNTIL_HOUR = 20
 const SOFT_HOUR = 22
 const DEADLINE_HOUR = 23
 const DEADLINE_MINUTE = 30
@@ -58,21 +60,26 @@ function minutesOfDay(hours, minutes) {
 }
 
 /**
- * 策略 A：
- * - bonus >= 5 → 高分签到
+ * 策略 B（白天优先等 8，过点再收 5）：
+ * - bonus >= 8 → 高分签到（全天）
+ * - 北京 >= 20:00 且 bonus >= 5 → 收 5 分档
  * - 北京 >= 22:00 且 bonus >= 3 → 软保底
  * - 北京 >= 23:30 → 硬保底
  */
 function decideCheckin(bonus, bj) {
   const nowMin = minutesOfDay(bj.hours, bj.minutes)
+  const prefer8UntilMin = minutesOfDay(PREFER8_UNTIL_HOUR, 0)
   const softMin = minutesOfDay(SOFT_HOUR, 0)
   const hardMin = minutesOfDay(DEADLINE_HOUR, DEADLINE_MINUTE)
 
   if (nowMin >= hardMin) {
     return { shouldCheckin: true, reason: '硬保底签到' }
   }
-  if (bonus >= 5) {
-    return { shouldCheckin: true, reason: '高分签到' }
+  if (bonus >= 8) {
+    return { shouldCheckin: true, reason: '高分签到(+8)' }
+  }
+  if (nowMin >= prefer8UntilMin && bonus >= 5) {
+    return { shouldCheckin: true, reason: '收5分档签到' }
   }
   if (nowMin >= softMin && bonus >= 3) {
     return { shouldCheckin: true, reason: '软保底签到' }
