@@ -1,0 +1,19 @@
+# 本地设计/抓包（可能含 Cookie），禁止入库
+design-assets/
+
+# 环境变量
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
+*.swp
+*~

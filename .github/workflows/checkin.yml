@@ -1,0 +1,33 @@
+name: GLaDOS Smart Checkin
+
+on:
+  schedule:
+    # 每 30 分钟（UTC :00/:30 = 北京 :00/:30）
+    - cron: '*/30 * * * *'
+    # 约北京时间 23:45，硬保底补跑
+    - cron: '45 15 * * *'
+  workflow_dispatch:
+
+jobs:
+  checkin:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run smart checkin
+        run: node main.js
+        env:
+          GLADOS: ${{ secrets.GLADOS }}
+          GLADOS_UA: ${{ secrets.GLADOS_UA }}
+          NOTIFY: ${{ secrets.NOTIFY }}
+          DOMAIN: ${{ secrets.DOMAIN }}
+          AUTO_EXCHANGE: ${{ secrets.AUTO_EXCHANGE }}
+          EXCHANGE_THRESHOLD: ${{ secrets.EXCHANGE_THRESHOLD }}

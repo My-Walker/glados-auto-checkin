@@ -1,0 +1,14 @@
+{
+  "name": "glados-auto-checkin",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GLaDOS 智能高分签到（GitHub Actions + PushPlus）",
+  "main": "main.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node main.js",
+    "checkin": "node main.js"
+  }
+}
