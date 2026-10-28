@@ -375,11 +375,15 @@ async function main() {
   const bj = getBeijingParts()
   console.log(`北京时间: ${bj.label}`)
 
-  const cookies = splitLines(process.env.GLADOS)
+  const cookies = splitLines(process.env.GLADOS_COOKIE)
   if (!cookies.length) {
-    console.error('未设置 GLADOS（Cookie），退出')
+    console.error('未设置 GLADOS_COOKIE（Cookie），退出')
     const failLines = [
-      ['【配置错误】缺少 GLADOS Cookie', `北京时间: ${bj.label}`, '请在仓库 Secrets 中配置 GLADOS'],
+      [
+        '【配置错误】缺少 Cookie',
+        `北京时间: ${bj.label}`,
+        '请在仓库 Secrets 中配置 GLADOS_COOKIE',
+      ],
     ]
     await sendNotices(failLines)
     process.exit(1)

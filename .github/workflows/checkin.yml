@@ -25,7 +25,7 @@ jobs:
       - name: Run smart checkin
         run: node main.js
         env:
-          GLADOS: ${{ secrets.GLADOS }}
+          GLADOS_COOKIE: ${{ secrets.GLADOS_COOKIE }}
           GLADOS_UA: ${{ secrets.GLADOS_UA }}
           NOTIFY: ${{ secrets.NOTIFY }}
           DOMAIN: ${{ secrets.DOMAIN }}
