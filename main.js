@@ -173,7 +173,42 @@ async function fetchPoints(base, headers) {
   }
   const raw = data?.points ?? data?.data?.points
   const n = Number(raw)
-  return Number.isFinite(n) ? n : null
+  return {
+    points: Number.isFinite(n) ? n : null,
+    history: Array.isArray(data?.history) ? data.history : [],
+  }
+}
+
+/**
+ * 从积分历史判断北京时间「今天」是否已签到（不触发 checkin）
+ * 优先匹配 detail === YYYY-MM-DD；其次用 time 换算北京日期
+ */
+function findTodayCheckin(history, bjDateStr) {
+  if (!Array.isArray(history) || !bjDateStr) return null
+  for (const item of history) {
+    if (item?.business !== 'system:checkin') continue
+    if (String(item.detail) === bjDateStr) {
+      const change = Number(item.change)
+      return {
+        change: Number.isFinite(change) ? change : null,
+        detail: String(item.detail),
+      }
+    }
+    if (item.time != null) {
+      const t = Number(item.time)
+      if (Number.isFinite(t)) {
+        const day = getBeijingParts(new Date(t)).dateStr
+        if (day === bjDateStr) {
+          const change = Number(item.change)
+          return {
+            change: Number.isFinite(change) ? change : null,
+            detail: String(item.detail || day),
+          }
+        }
+      }
+    }
+  }
+  return null
 }
 
 async function doExchange(base, headers) {
@@ -276,11 +311,13 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
   let bonus = 0
   let decisionLabel = '未知'
   let checkinMessage = ''
+  let signStatus = ''
   let leftDays = null
   let currentPoints = null
   let exchangeNote = ''
 
   try {
+    // 1) 质量检测（无论是否已签都执行，便于拥堵统计）
     score = await fetchIqi(base, headers)
     bonus = getCableBonus(score)
     const decision = decideCheckin(bonus, bj)
@@ -290,16 +327,59 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
       `[账号 ${accountNo}] 北京 ${bj.label} | score=${score} | bonus=+${bonus} | 决策=${decision.reason}`
     )
 
-    if (decision.shouldCheckin) {
+    // 2) 查积分历史，判断今日是否已签（不触发签到）
+    let todayCheckin = null
+    try {
+      const pointsInfo = await fetchPoints(base, headers)
+      currentPoints = pointsInfo.points
+      todayCheckin = findTodayCheckin(pointsInfo.history, bj.dateStr)
+      console.log(`[账号 ${accountNo}] 当前积分: ${formatPoints(currentPoints)}`)
+      if (todayCheckin) {
+        const gained =
+          todayCheckin.change != null ? `+${todayCheckin.change}` : '已记录'
+        console.log(`[账号 ${accountNo}] 积分历史：今日已签（${gained}，detail=${todayCheckin.detail}）`)
+      } else {
+        console.log(`[账号 ${accountNo}] 积分历史：今日尚未签到`)
+      }
+    } catch (e) {
+      console.warn(`[账号 ${accountNo}] 积分查询失败: ${e.message}`)
+    }
+
+    // 3) 仅「今日未签」且策略命中时才 POST checkin；已签仍做检测与推送
+    if (todayCheckin) {
+      const gained =
+        todayCheckin.change != null ? `+${todayCheckin.change}` : '有记录'
+      signStatus = `今日已签（${gained}）`
+      if (decision.shouldCheckin) {
+        checkinMessage = `本轮跳过签到（已签；若未签则会：${decision.reason}）`
+      } else {
+        checkinMessage = '本轮仅检测，跳过签到（今日已签）'
+      }
+      console.log(`[账号 ${accountNo}] ${checkinMessage}`)
+    } else if (decision.shouldCheckin) {
+      signStatus = '今日未签'
       const action = await doCheckin(base, headers, domain)
       checkinMessage = action.message
       if (action.already) {
-        decisionLabel = `${decision.reason}（今日已签）`
+        signStatus = '今日已签（接口返回）'
+        decisionLabel = `${decision.reason}（接口显示已签）`
       }
       console.log(`[账号 ${accountNo}] 签到: code=${action.code} | ${action.message}`)
+      // 签到后刷新积分（含历史）
+      try {
+        const pointsInfo = await fetchPoints(base, headers)
+        currentPoints = pointsInfo.points
+        todayCheckin = findTodayCheckin(pointsInfo.history, bj.dateStr)
+        if (todayCheckin && !action.already) {
+          signStatus = `今日已签（+${todayCheckin.change ?? '?'}）`
+        }
+      } catch (e) {
+        console.warn(`[账号 ${accountNo}] 签到后积分刷新失败: ${e.message}`)
+      }
     } else {
-      checkinMessage = '未签到'
-      console.log(`[账号 ${accountNo}] 条件未满足，观望中`)
+      signStatus = '今日未签'
+      checkinMessage = '本轮未请求签到（观望，分数未达标）'
+      console.log(`[账号 ${accountNo}] ${checkinMessage}`)
     }
 
     try {
@@ -307,13 +387,6 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
       console.log(`[账号 ${accountNo}] 剩余天数: ${formatDays(leftDays)}`)
     } catch (e) {
       console.warn(`[账号 ${accountNo}] 状态查询失败: ${e.message}`)
-    }
-
-    try {
-      currentPoints = await fetchPoints(base, headers)
-      console.log(`[账号 ${accountNo}] 当前积分: ${formatPoints(currentPoints)}`)
-    } catch (e) {
-      console.warn(`[账号 ${accountNo}] 积分查询失败: ${e.message}`)
     }
 
     if (autoExchange) {
@@ -348,7 +421,8 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
       `【账号${accountNo}】${decisionLabel}`,
       `北京时间: ${bj.label}`,
       `IQI score: ${score ?? '无'} | Cable: +${bonus}`,
-      `签到: ${checkinMessage || '-'}`,
+      `签到状态: ${signStatus || '-'}`,
+      `本轮: ${checkinMessage || '-'}`,
       `剩余天数: ${formatDays(leftDays)}`,
       `当前积分: ${formatPoints(currentPoints)}`,
       `兑换: ${exchangeNote}`
@@ -361,6 +435,7 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
       `北京时间: ${bj.label}`,
       `IQI score: ${score ?? '无'} | Cable: +${bonus}`,
       `决策: ${decisionLabel}`,
+      `签到状态: ${signStatus || '-'}`,
       `错误: ${err.message}`,
       `剩余天数: ${formatDays(leftDays)}`,
       `当前积分: ${formatPoints(currentPoints)}`
