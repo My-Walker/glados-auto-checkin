@@ -61,10 +61,11 @@ function minutesOfDay(hours, minutes) {
 
 /**
  * 策略 B（白天优先等 8，过点再收 5）：
- * - bonus >= 8 → 高分签到（全天）
+ * - bonus >= 8 → 高分（全天）
  * - 北京 >= 20:00 且 bonus >= 5 → 收 5 分档
  * - 北京 >= 22:00 且 bonus >= 3 → 软保底
  * - 北京 >= 23:30 → 硬保底
+ * tier: high8 | take5 | soft | hard | watch
  */
 function decideCheckin(bonus, bj) {
   const nowMin = minutesOfDay(bj.hours, bj.minutes)
@@ -73,18 +74,52 @@ function decideCheckin(bonus, bj) {
   const hardMin = minutesOfDay(DEADLINE_HOUR, DEADLINE_MINUTE)
 
   if (nowMin >= hardMin) {
-    return { shouldCheckin: true, reason: '硬保底签到' }
+    return { shouldCheckin: true, tier: 'hard', reason: '硬保底' }
   }
   if (bonus >= 8) {
-    return { shouldCheckin: true, reason: '高分签到(+8)' }
+    return { shouldCheckin: true, tier: 'high8', reason: '高分(+8)' }
   }
   if (nowMin >= prefer8UntilMin && bonus >= 5) {
-    return { shouldCheckin: true, reason: '收5分档签到' }
+    return { shouldCheckin: true, tier: 'take5', reason: '收5分档' }
   }
   if (nowMin >= softMin && bonus >= 3) {
-    return { shouldCheckin: true, reason: '软保底签到' }
+    return { shouldCheckin: true, tier: 'soft', reason: '软保底' }
   }
-  return { shouldCheckin: false, reason: '观望' }
+  return { shouldCheckin: false, tier: 'watch', reason: '观望' }
+}
+
+/** 推送「策略:」行（变体 B） */
+function formatStrategyLabel(decision) {
+  switch (decision?.tier) {
+    case 'high8':
+      return '命中高分(+8)'
+    case 'take5':
+      return '命中收5分档'
+    case 'soft':
+      return '命中软保底'
+    case 'hard':
+      return '命中硬保底'
+    case 'watch':
+      return '观望（未达标）'
+    default:
+      return decision?.reason || '未知'
+  }
+}
+
+/** 签到成功标题用的短档位名 */
+function formatTierShort(decision) {
+  switch (decision?.tier) {
+    case 'high8':
+      return '高分(+8)'
+    case 'take5':
+      return '收5分档'
+    case 'soft':
+      return '软保底'
+    case 'hard':
+      return '硬保底'
+    default:
+      return decision?.reason || ''
+  }
 }
 
 function parseEnvBoolTrue(value) {
@@ -309,7 +344,8 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
 
   let score = null
   let bonus = 0
-  let decisionLabel = '未知'
+  let titleLabel = '未知'
+  let strategyLabel = '未知'
   let checkinMessage = ''
   let signStatus = ''
   let leftDays = null
@@ -321,10 +357,10 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
     score = await fetchIqi(base, headers)
     bonus = getCableBonus(score)
     const decision = decideCheckin(bonus, bj)
-    decisionLabel = decision.reason
+    strategyLabel = formatStrategyLabel(decision)
 
     console.log(
-      `[账号 ${accountNo}] 北京 ${bj.label} | score=${score} | bonus=+${bonus} | 决策=${decision.reason}`
+      `[账号 ${accountNo}] 北京 ${bj.label} | score=${score} | bonus=+${bonus} | 策略=${strategyLabel}`
     )
 
     // 2) 查积分历史，判断今日是否已签（不触发签到）
@@ -346,25 +382,26 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
     }
 
     // 3) 仅「今日未签」且策略命中时才 POST checkin；已签仍做检测与推送
+    // 推送职责：标题=结果；策略=档位；签到状态=事实；本轮=动作（变体 B）
     if (todayCheckin) {
       const gained =
         todayCheckin.change != null ? `+${todayCheckin.change}` : '有记录'
+      titleLabel = '今日已签·本轮仅检测'
       signStatus = `今日已签（${gained}）`
-      if (decision.shouldCheckin) {
-        checkinMessage = `本轮跳过签到（已签；若未签则会：${decision.reason}）`
-      } else {
-        checkinMessage = '本轮仅检测，跳过签到（今日已签）'
-      }
-      console.log(`[账号 ${accountNo}] ${checkinMessage}`)
+      checkinMessage = '跳过'
+      console.log(`[账号 ${accountNo}] 本轮跳过（今日已签；策略=${strategyLabel}）`)
     } else if (decision.shouldCheckin) {
       signStatus = '今日未签'
       const action = await doCheckin(base, headers, domain)
-      checkinMessage = action.message
-      if (action.already) {
-        signStatus = '今日已签（接口返回）'
-        decisionLabel = `${decision.reason}（接口显示已签）`
-      }
       console.log(`[账号 ${accountNo}] 签到: code=${action.code} | ${action.message}`)
+      if (action.already) {
+        titleLabel = '接口显示已签'
+        signStatus = '今日已签（接口返回）'
+        checkinMessage = '接口已签'
+      } else {
+        titleLabel = `签到成功·${formatTierShort(decision)}`
+        checkinMessage = '签到成功'
+      }
       // 签到后刷新积分（含历史）
       try {
         const pointsInfo = await fetchPoints(base, headers)
@@ -377,9 +414,10 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
         console.warn(`[账号 ${accountNo}] 签到后积分刷新失败: ${e.message}`)
       }
     } else {
+      titleLabel = '观望'
       signStatus = '今日未签'
-      checkinMessage = '本轮未请求签到（观望，分数未达标）'
-      console.log(`[账号 ${accountNo}] ${checkinMessage}`)
+      checkinMessage = '跳过'
+      console.log(`[账号 ${accountNo}] 本轮跳过（观望）`)
     }
 
     try {
@@ -418,9 +456,10 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
     }
 
     lines.push(
-      `【账号${accountNo}】${decisionLabel}`,
+      `【账号${accountNo}】${titleLabel}`,
       `北京时间: ${bj.label}`,
       `IQI score: ${score ?? '无'} | Cable: +${bonus}`,
+      `策略: ${strategyLabel}`,
       `签到状态: ${signStatus || '-'}`,
       `本轮: ${checkinMessage || '-'}`,
       `剩余天数: ${formatDays(leftDays)}`,
@@ -434,7 +473,7 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
       `【账号${accountNo}】失败`,
       `北京时间: ${bj.label}`,
       `IQI score: ${score ?? '无'} | Cable: +${bonus}`,
-      `决策: ${decisionLabel}`,
+      `策略: ${strategyLabel}`,
       `签到状态: ${signStatus || '-'}`,
       `错误: ${err.message}`,
       `剩余天数: ${formatDays(leftDays)}`,
