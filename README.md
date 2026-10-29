@@ -13,8 +13,6 @@
 - 推送：每次含北京时间、score、bonus、决策、签到结果、**剩余天数**、**当前积分**
 - 自动兑换：代码已支持 `500 积分 → 100 天`，**默认关闭**
 
-本地设计稿 / 接口抓包请放在 `design-assets/`（已加入 `.gitignore`，勿提交到公共仓）。
-
 工作流文件：
 
 - 模式 A：[`checkin-external-cron.yml`](.github/workflows/checkin-external-cron.yml) → Actions 名 **GLaDOS签到 · 模式A · 外部定时触发**
