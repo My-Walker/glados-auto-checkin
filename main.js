@@ -344,7 +344,7 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
 
   let score = null
   let bonus = 0
-  let titleLabel = '未知'
+  let titleLabel = '❓ 未知'
   let strategyLabel = '未知'
   let checkinMessage = ''
   let signStatus = ''
@@ -386,7 +386,7 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
     if (todayCheckin) {
       const gained =
         todayCheckin.change != null ? `+${todayCheckin.change}` : '有记录'
-      titleLabel = '今日已签·本轮仅检测'
+      titleLabel = '📌 今日已签·本轮仅检测'
       signStatus = `今日已签（${gained}）`
       checkinMessage = '跳过'
       console.log(`[账号 ${accountNo}] 本轮跳过（今日已签；策略=${strategyLabel}）`)
@@ -395,11 +395,11 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
       const action = await doCheckin(base, headers, domain)
       console.log(`[账号 ${accountNo}] 签到: code=${action.code} | ${action.message}`)
       if (action.already) {
-        titleLabel = '接口显示已签'
+        titleLabel = '📌 接口显示已签'
         signStatus = '今日已签（接口返回）'
         checkinMessage = '接口已签'
       } else {
-        titleLabel = `签到成功·${formatTierShort(decision)}`
+        titleLabel = `✅ 签到成功·${formatTierShort(decision)}`
         checkinMessage = '签到成功'
       }
       // 签到后刷新积分（含历史）
@@ -414,7 +414,7 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
         console.warn(`[账号 ${accountNo}] 签到后积分刷新失败: ${e.message}`)
       }
     } else {
-      titleLabel = '观望'
+      titleLabel = `👀 观望 · Cable+${bonus}`
       signStatus = '今日未签'
       checkinMessage = '跳过'
       console.log(`[账号 ${accountNo}] 本轮跳过（观望）`)
@@ -470,7 +470,7 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
     failed = true
     console.error(`[账号 ${accountNo}] 失败: ${err.message}`)
     lines.push(
-      `【账号${accountNo}】失败`,
+      `【账号${accountNo}】⚠️ 失败`,
       `北京时间: ${bj.label}`,
       `IQI score: ${score ?? '无'} | Cable: +${bonus}`,
       `策略: ${strategyLabel}`,
@@ -494,7 +494,7 @@ async function main() {
     console.error('未设置 GLADOS_COOKIE（Cookie），退出')
     const failLines = [
       [
-        '【配置错误】缺少 Cookie',
+        '⚠️ 【配置错误】缺少 Cookie',
         `北京时间: ${bj.label}`,
         '请在仓库 Secrets 中配置 GLADOS_COOKIE',
       ],
