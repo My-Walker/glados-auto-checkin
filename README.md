@@ -89,6 +89,8 @@ Actions → **GLaDOS签到 · 外部定时触发** → **Run workflow**。成功
 
 GitHub 自带高频 `schedule` 常延迟或丢任务；用外部定时调用 `workflow_dispatch` 更稳。
 
+**分工：** 日常轮询靠 cron-job.org（或同类服务）；同一工作流 [`checkin-external-cron.yml`](.github/workflows/checkin-external-cron.yml) 里仍保留北京 **23:00 / 23:30 / 23:45 / 00:00 / 00:30 / 01:00** 的 GitHub `schedule` 作夜间～凌晨保底。保底仍走 GitHub 调度，**可能延迟或丢弃**，不能当作唯一闹钟。
+
 #### 4.1 创建 GitHub PAT
 
 1. GitHub → **Settings → Developer settings → Personal access tokens**  
@@ -118,10 +120,11 @@ PAT 只放在 cron-job.org，**不要**写进仓库。
 
 | 模式 | Actions 名称 | 工作流文件 | 怎么用 |
 |------|--------------|------------|--------|
-| **外部定时触发**（推荐） | **GLaDOS签到 · 外部定时触发** | [`checkin-external-cron.yml`](.github/workflows/checkin-external-cron.yml) | **启用**本工作流；用 cron-job.org（等）POST；**Disable**「仅GitHub Schedule」 |
-| **仅 GitHub Schedule** | **GLaDOS签到 · 仅GitHub Schedule** | [`checkin-github-schedule.yml`](.github/workflows/checkin-github-schedule.yml) | **暂停**外部定时任务；**Disable**「外部定时触发」；**Enable** 本工作流 |
+| **外部定时触发**（推荐） | **GLaDOS签到 · 外部定时触发** | [`checkin-external-cron.yml`](.github/workflows/checkin-external-cron.yml) | **启用**本工作流；用 cron-job.org（等）POST 做主轮询；**同文件内**还有夜间～凌晨 GitHub `schedule` 保底（时刻见下文）；**Disable**「仅GitHub Schedule」 |
+| **仅 GitHub Schedule** | **GLaDOS签到 · 仅GitHub Schedule** | [`checkin-github-schedule.yml`](.github/workflows/checkin-github-schedule.yml) | **暂停**外部定时任务；**Disable**「外部定时触发」；**Enable** 本工作流（轮询与保底都靠本文件里的 `schedule`） |
 
-不要两套主轮询同时开着，否则会双跑、双推送。
+不要两套主轮询同时开着，否则会双跑、双推送。  
+「外部定时触发」启用时：**不要**关掉整个该工作流，否则夜间 GitHub 保底也会一起停；只需 Disable「仅GitHub Schedule」，并保证 cron-job.org 在跑。
 
 ## 签到策略（北京时间）
 
