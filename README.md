@@ -35,26 +35,40 @@
 
 | Name | 必填 | 说明 |
 |------|------|------|
-| `GLADOS_COOKIE` | 是 | GLaDOS 登录 Cookie（多账号换行）。建议含 `gld:sess` / `gld:sess.sig` / `koa:sess` / `koa:sess.sig` |
+| `GLADOS_COOKIE` | 是 | GLaDOS 登录 Cookie（多账号换行）。见下方字段说明与获取步骤 |
 | `GLADOS_UA` | 强烈建议 | 与登录浏览器一致的 User-Agent 字符串；**不要带引号** |
 | `NOTIFY` | 建议 | PushPlus：`pushplus:` + **用户 token 或消息 token**（见下方说明）；**不要用 SecretKey** |
 | `DOMAIN` | 否 | 默认 `glados.cloud`；仅填主机名，如 `railgun.info` |
 | `AUTO_EXCHANGE` | 否 | 默认关闭；设为 `true` 才自动兑换 |
 | `EXCHANGE_THRESHOLD` | 否 | 默认 `500` |
 
-##### 获取 Cookie（`GLADOS_COOKIE`）— 推荐 Network / Request Headers
+##### Cookie 里常见字段分别是什么？
 
-1. 浏览器登录 GLaDOS（与 `DOMAIN` 同一站点），打开签到页  
-2. 按 **F12** → **Network（网络）**  
-3. 刷新页面，或点开任意一条对当前站点的请求（如 `status`、`iqi`、`checkin`）  
-4. 右侧 **Headers（标头）** → 找到 **Request Headers（请求标头）**  
-5. 找到 **`cookie:`**（或 `Cookie:`）那一整行，**复制冒号后面的全部内容**（不要包含 `cookie:` 这几个字本身）  
-6. 粘贴到记事本检查：应类似  
-   `koa:sess=...; koa:sess.sig=...; gld:sess=...; gld:sess.sig=...`  
-7. GitHub Secret **Name** 填 `GLADOS_COOKIE`，**Secret** 填上面整段（**不要加引号**）
+登录态相关（和签到有关，按你实际复制到的为准）：
 
-也可在 F12 → **Application（应用）→ Cookies** 里分别复制四个字段再拼成一行。  
-重新登录或 Cookie 失效后，请同时更新 `GLADOS_COOKIE` 与 `GLADOS_UA`。
+| 字段 | 含义（简要） |
+|------|----------------|
+| `gld:sess` / `gld:sess.sig` | 偏 **glados.cloud** 一侧的会话与签名；`DOMAIN` 用 `glados.cloud` 时这组最关键 |
+| `koa:sess` / `koa:sess.sig` | 偏 **glados.one** 等站点遗留/共用登录态时的会话与签名；若你只清 Cookie 后直连 `.cloud` 登录，请求里可能没有这两项，**一般也能签到** |
+
+无关字段（可删）：
+
+| 字段 | 说明 |
+|------|------|
+| `__stripe_mid` 等 | Stripe 支付相关，与签到无关，**建议从 Secret 里去掉** |
+
+`glados.one` 与 `glados.cloud` 可能共享登录；先登一个再打开另一个，容易四个会话字段都出现。对本仓库默认 `DOMAIN=glados.cloud`：**不必强求凑齐四个**。
+
+##### 获取 Cookie（`GLADOS_COOKIE`）— 推荐做法（简单）
+
+1. 打开 `https://glados.cloud`（或与你 `DOMAIN` 一致的站点）  
+2. F12 → **Application（应用）→ Cookies** → 删掉该站点下已有 Cookie（或换无痕窗口）  
+3. **只在该域名登录**目标账号（不要先去别的域名绕一圈，除非你有意要两套字段）  
+4. 进入签到页 → F12 → **Network（网络）** → 刷新或点开 `status` / `iqi` / `points` 等请求  
+5. **Headers** → **Request Headers** → 复制 `cookie:` **冒号后面整段**（不要带 `cookie:` 这几个字）  
+6. 可删掉 `__stripe_mid=...` 等无关项；**不要加引号**  
+7. 多账号：每个号重复「清 Cookie → 只登 `.cloud` → 复制一行」，多行写入同一个 `GLADOS_COOKIE`（换行分隔）  
+8. Cookie 失效或换号后，同时更新 `GLADOS_COOKIE` 与 `GLADOS_UA`
 
 ##### 获取 UA（`GLADOS_UA`）
 
