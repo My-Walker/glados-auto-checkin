@@ -1,0 +1,36 @@
+# 模式 B（原方案）：仅依赖 GitHub Actions 自带 schedule（约每 30 分钟）。
+# 默认请在仓库 Actions 中 Disable 本工作流，避免与 cron-job.org + checkin.yml 双跑。
+# 切回旧方案：暂停外部定时 → Enable 本工作流 →（建议）Disable「GLaDOS Smart Checkin」。
+name: GLaDOS Checkin Legacy Schedule
+
+on:
+  schedule:
+    # 每 30 分钟（UTC :00/:30 = 北京 :00/:30）；GitHub 可能延迟或丢弃
+    - cron: '*/30 * * * *'
+    # 约北京 23:45 保底（模式 B 自洽，不依赖主工作流）
+    - cron: '45 15 * * *'
+  workflow_dispatch:
+
+jobs:
+  checkin:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run smart checkin
+        run: node main.js
+        env:
+          GLADOS_COOKIE: ${{ secrets.GLADOS_COOKIE }}
+          GLADOS_UA: ${{ secrets.GLADOS_UA }}
+          NOTIFY: ${{ secrets.NOTIFY }}
+          DOMAIN: ${{ secrets.DOMAIN }}
+          AUTO_EXCHANGE: ${{ secrets.AUTO_EXCHANGE }}
+          EXCHANGE_THRESHOLD: ${{ secrets.EXCHANGE_THRESHOLD }}

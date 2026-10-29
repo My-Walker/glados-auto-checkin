@@ -1,12 +1,17 @@
+# 模式 A（推荐）：由 cron-job.org 等外部定时调用 workflow_dispatch；
+# 并保留北京夜间～凌晨若干 schedule 作保底（GitHub 仍可能延迟/丢任务）。
 name: GLaDOS Smart Checkin
 
 on:
-  schedule:
-    # 每 30 分钟（UTC :00/:30 = 北京 :00/:30）
-    - cron: '*/30 * * * *'
-    # 约北京时间 23:45，硬保底补跑
-    - cron: '45 15 * * *'
   workflow_dispatch:
+  schedule:
+    # 以下均为 UTC = 北京时间 - 8 小时
+    - cron: '0 15 * * *' # 北京 23:00
+    - cron: '30 15 * * *' # 北京 23:30 硬保底
+    - cron: '45 15 * * *' # 北京 23:45 补跑
+    - cron: '0 16 * * *' # 北京 00:00（新一天高分窗）
+    - cron: '30 16 * * *' # 北京 00:30
+    - cron: '0 17 * * *' # 北京 01:00
 
 jobs:
   checkin:

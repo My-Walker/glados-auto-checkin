@@ -6,11 +6,12 @@
 
 ## 功能概览
 
-- 每 **30 分钟** 跑一次（另有约北京 **23:45** 保底补跑）
+- **推荐模式 A**：用 [cron-job.org](https://cron-job.org) 每 30 分钟远程触发 Actions（比 GitHub 自带 `schedule` 稳）
+- 主工作流另保留北京 **23:00 / 23:30 / 23:45 / 00:00 / 00:30 / 01:00** 的 schedule 作夜间～凌晨保底
+- **模式 B（原方案）**：独立工作流 `checkin-legacy-schedule.yml`（约每 30 分钟 schedule），默认请 **Disable**，需要时可再启用切回
 - 策略：白天优先等 Cable `bonus ≥ 8`；北京 **20:00** 后可收 `≥ 5`；**22:00** 后可 `≥ 3`；**23:30** 起强制签
 - 推送：每次含北京时间、score、bonus、决策、签到结果、**剩余天数**、**当前积分**
 - 自动兑换：代码已支持 `500 积分 → 100 天`，**默认关闭**
-- **不会**在未开开关时调用兑换接口
 
 本地设计稿 / 接口抓包请放在 `design-assets/`（已加入 `.gitignore`，勿提交到公共仓）。
 
@@ -20,7 +21,8 @@
 
 1. Fork 或推送本仓库到 GitHub  
 2. 打开 **Actions**，启用工作流  
-3. 在默认分支保留 `.github/workflows/checkin.yml`
+3. 推送后请到 Actions → **GLaDOS Checkin Legacy Schedule** → `…` → **Disable workflow**（避免与模式 A 双跑）  
+4. 保持 **GLaDOS Smart Checkin** 为启用状态
 
 ### 2. 配置 Secrets
 
@@ -83,6 +85,49 @@ pushplus:xxxxxxxxxxxxxxxx
 
 Actions → **GLaDOS Smart Checkin** → **Run workflow**。成功后应收到微信推送。
 
+### 4. 配置 cron-job.org（模式 A，推荐）
+
+GitHub 自带 `*/30` schedule 常延迟或丢任务；用外部定时调用 `workflow_dispatch` 更稳。
+
+#### 4.1 创建 GitHub PAT
+
+1. GitHub → **Settings → Developer settings → Personal access tokens**  
+2. 建议 **Fine-grained token**：只选本仓库，权限勾选 **Actions: Read and write**（能触发 workflow 即可）  
+3. 生成后复制保存（只显示一次）
+
+#### 4.2 在 cron-job.org 创建任务
+
+1. 注册并登录 [cron-job.org](https://cron-job.org)  
+2. 新建 Cronjob，大致配置：  
+   - **URL**：  
+     `https://api.github.com/repos/<你的用户名>/glados-auto-checkin/actions/workflows/checkin.yml/dispatches`  
+     （本仓库示例：`https://api.github.com/repos/My-Walker/glados-auto-checkin/actions/workflows/checkin.yml/dispatches`）  
+   - **Method**：`POST`  
+   - **Schedule**：每 30 分钟（或按需）  
+   - **Request Headers**：  
+     - `Authorization`: `Bearer <你的PAT>`  
+     - `Accept`: `application/vnd.github+json`  
+     - `Content-Type`: `application/json`  
+     - `X-GitHub-Api-Version`: `2022-11-28`（可选，建议带上）  
+   - **Body**：`{"ref":"main"}`  
+3. 保存后等一次执行，或在站点里手动测；GitHub Actions 应出现由 `workflow_dispatch` 触发的运行
+
+PAT 只放在 cron-job.org，**不要**写进仓库。
+
+## 两种调度模式怎么切换
+
+| 模式 | 做什么 |
+|------|--------|
+| **A（推荐）** | 启用 **GLaDOS Smart Checkin**；**Disable** Legacy；cron-job.org 每 30 分钟 POST |
+| **B（原 GitHub 定时）** | **暂停** cron-job.org 任务；**Disable** Smart Checkin（或仅停外部也行）；**Enable** **GLaDOS Checkin Legacy Schedule** |
+
+不要让 Legacy 的 `*/30` 与 cron-job.org 同时开着，否则会双跑、双推送。
+
+相关文件：
+
+- 模式 A：[`.github/workflows/checkin.yml`](.github/workflows/checkin.yml)  
+- 模式 B：[`.github/workflows/checkin-legacy-schedule.yml`](.github/workflows/checkin-legacy-schedule.yml)
+
 ## 签到策略（北京时间）
 
 白天优先等 +8，避免过早锁在 +5；傍晚再逐步放宽。
@@ -106,22 +151,21 @@ Actions → **GLaDOS Smart Checkin** → **Run workflow**。成功后应收到�
 
 ## 如何改间隔 / 对齐时间
 
-编辑 [`.github/workflows/checkin.yml`](.github/workflows/checkin.yml) 中的 `cron`（GitHub 默认按 **UTC**）：
+- **模式 A 主频率**：在 cron-job.org 改任务间隔。  
+- **模式 A 夜间保底**：改 [`checkin.yml`](.github/workflows/checkin.yml) 的 `schedule`（值为 **UTC**，北京 = UTC+8）。当前保底点：
 
-```yaml
-schedule:
-  - cron: '*/30 * * * *'   # 每 30 分钟，对齐 :00/:30
-  - cron: '45 15 * * *'    # 约北京 23:45 补跑
-```
+| 北京时间 | UTC cron |
+|----------|----------|
+| 23:00 | `0 15 * * *` |
+| 23:30 | `30 15 * * *` |
+| 23:45 | `45 15 * * *` |
+| 00:00 | `0 16 * * *` |
+| 00:30 | `30 16 * * *` |
+| 01:00 | `0 17 * * *` |
 
-示例：
+- **模式 B**：改 [`checkin-legacy-schedule.yml`](.github/workflows/checkin-legacy-schedule.yml) 中的 `*/30` 等。
 
-- 每小时整点：`0 * * * *`
-- 每小时 :10 与 :40：`10,40 * * * *`
-
-收 5 起点 20:00 / 软保底 22:00 / 硬死线 23:30 在 [`main.js`](main.js) 顶部常量（`PREFER8_UNTIL_HOUR` / `SOFT_HOUR` / `DEADLINE_*`），与 cron 无关。
-
-改 cron 后需推到**默认分支**；立刻验证用手动 Run workflow。
+签到策略里的 20:00 / 22:00 / 23:30 在 [`main.js`](main.js) 顶部常量，与 cron 无关。改 workflow 后需推到**默认分支**。
 
 ## 本地运行
 
