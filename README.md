@@ -44,31 +44,24 @@
 
 ##### Cookie 里常见字段分别是什么？
 
-登录态相关（和签到有关，按你实际复制到的为准）：
-
-| 字段 | 含义（简要） |
-|------|----------------|
-| `gld:sess` / `gld:sess.sig` | 偏 **glados.cloud** 一侧的会话与签名；`DOMAIN` 用 `glados.cloud` 时这组最关键 |
-| `koa:sess` / `koa:sess.sig` | 偏 **glados.one** 等站点遗留/共用登录态时的会话与签名；若你只清 Cookie 后直连 `.cloud` 登录，请求里可能没有这两项，**一般也能签到** |
-
-无关字段（可删）：
-
 | 字段 | 说明 |
 |------|------|
-| `__stripe_mid` 等 | Stripe 支付相关，与签到无关，**建议从 Secret 里去掉** |
+| `gld:sess` / `gld:sess.sig` | **当前主会话**（约 2026-09 起）。官网 Cookie 政策亦以 `gld:sess` 表示保持登录。`DOMAIN=glados.cloud` 时 **必须有这一对** |
+| `koa:sess` / `koa:sess.sig` | **旧版会话名**。清 Cookie 后重新登录通常 **不会再出现**；多见于浏览器历史残留。有则一并复制无妨，**不要只靠 koa、也不要把 gld 改名成 koa** |
+| `__stripe_mid` 等 | Stripe 相关，与签到无关，**可删** |
 
-`glados.one` 与 `glados.cloud` 可能共享登录；先登一个再打开另一个，容易四个会话字段都出现。对本仓库默认 `DOMAIN=glados.cloud`：**不必强求凑齐四个**。
+清站点 Cookie 后只登 `glados.cloud`，请求里往往只有 `gld:*` 即可，**不必强求四个字段**。
 
 ##### 获取 Cookie（`GLADOS_COOKIE`）— 推荐做法（简单）
 
 1. 打开 `https://glados.cloud`（或与你 `DOMAIN` 一致的站点）  
-2. F12 → **Application（应用）→ Cookies** → 删掉该站点下已有 Cookie（或换无痕窗口）  
-3. **只在该域名登录**目标账号（不要先去别的域名绕一圈，除非你有意要两套字段）  
-4. 进入签到页 → F12 → **Network（网络）** → 刷新或点开 `status` / `iqi` / `points` 等请求  
-5. **Headers** → **Request Headers** → 复制 `cookie:` **冒号后面整段**（不要带 `cookie:` 这几个字）  
-6. 可删掉 `__stripe_mid=...` 等无关项；**不要加引号**  
-7. 多账号：每个号重复「清 Cookie → 只登 `.cloud` → 复制一行」，多行写入同一个 `GLADOS_COOKIE`（换行分隔）  
-8. Cookie 失效或换号后，同时更新 `GLADOS_COOKIE` 与 `GLADOS_UA`
+2. F12 → **Application（应用）→ Cookies** → 删掉该站点 Cookie（或换无痕窗口）  
+3. 重新登录目标账号  
+4. 进入签到页 → F12 → **Network** → 点开一次成功的 `status` / `iqi` / `points` 等请求  
+5. **Headers** → **Request Headers** → 复制 `cookie:` **冒号后面整段**（不要带 `cookie:` 字样）  
+6. 确认含有 `gld:sess=` 与 `gld:sess.sig=`；可去掉 `__stripe_mid`；**不要加引号**  
+7. 多账号：每个号「清 Cookie → 登录 → 复制一行」，多行写入 `GLADOS_COOKIE`  
+8. Cookie 失效或浏览器大版本升级后，同时更新 `GLADOS_COOKIE` 与 `GLADOS_UA`
 
 ##### 获取 UA（`GLADOS_UA`）
 
@@ -209,7 +202,7 @@ pushplus:xxxxxxxxxxxxxxxx
 ## 本地运行
 
 ```bash
-export GLADOS_COOKIE='koa:sess=...; ...'
+export GLADOS_COOKIE='gld:sess=...; gld:sess.sig=...'
 export GLADOS_UA='Mozilla/5.0 ...'   # shell 里引号是给命令行用的；GitHub Secret 里不要加引号
 export NOTIFY='pushplus:你的用户token或消息token'
 # export DOMAIN='glados.cloud'
