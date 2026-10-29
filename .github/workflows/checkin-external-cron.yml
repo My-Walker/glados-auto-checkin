@@ -1,15 +1,17 @@
-# 模式 B（原方案）：仅依赖 GitHub Actions 自带 schedule（约每 30 分钟）。
-# 默认请在仓库 Actions 中 Disable 本工作流，避免与 cron-job.org + checkin.yml 双跑。
-# 切回旧方案：暂停外部定时 → Enable 本工作流 →（建议）Disable「GLaDOS Smart Checkin」。
-name: GLaDOS Checkin Legacy Schedule
+# 模式：外部定时触发（推荐）
+# 由 cron-job.org 等调用 workflow_dispatch；另含北京夜间～凌晨若干 schedule 保底。
+name: GLaDOS签到 · 外部定时触发
 
 on:
-  schedule:
-    # 每 30 分钟（UTC :00/:30 = 北京 :00/:30）；GitHub 可能延迟或丢弃
-    - cron: '*/30 * * * *'
-    # 约北京 23:45 保底（模式 B 自洽，不依赖主工作流）
-    - cron: '45 15 * * *'
   workflow_dispatch:
+  schedule:
+    # 以下均为 UTC = 北京时间 - 8 小时
+    - cron: '0 15 * * *' # 北京 23:00
+    - cron: '30 15 * * *' # 北京 23:30 硬保底
+    - cron: '45 15 * * *' # 北京 23:45 补跑
+    - cron: '0 16 * * *' # 北京 00:00（新一天高分窗）
+    - cron: '30 16 * * *' # 北京 00:30
+    - cron: '0 17 * * *' # 北京 01:00
 
 jobs:
   checkin:
