@@ -1,7 +1,7 @@
-# 模式：仅 GitHub Schedule
+# 模式 B：仅 GitHub Schedule
 # 轮询间隔在下方 cron 中配置（默认示例为每 30 分钟，可按需修改）。
-# 与「外部定时触发」不要同时启用主轮询，以免双跑；默认请 Disable 本工作流。
-name: GLaDOS签到 · 仅GitHub Schedule
+# 与模式 A 不要同时启用主轮询，以免双跑；使用模式 A 时请 Disable 本工作流。
+name: GLaDOS签到 · 模式B · 仅GitHub Schedule
 
 on:
   schedule:

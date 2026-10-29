@@ -1,6 +1,6 @@
-# 模式：外部定时触发（推荐）
+# 模式 A：外部定时触发（推荐）
 # 由 cron-job.org 等调用 workflow_dispatch；另含北京夜间～凌晨若干 schedule 保底。
-name: GLaDOS签到 · 外部定时触发
+name: GLaDOS签到 · 模式A · 外部定时触发
 
 on:
   workflow_dispatch:
