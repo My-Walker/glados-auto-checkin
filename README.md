@@ -6,8 +6,8 @@
 
 ## 功能概览
 
-- **两种调度模式**（按触发方式区分，间隔可自行配置）：
-  - **模式 A · 外部定时触发**（推荐）：[cron-job.org](https://cron-job.org) 等远程 `workflow_dispatch` + 北京夜间～凌晨若干 schedule 保底  
+- **两种调度模式**（互斥：主轮询不要同时开；间隔可自行配置）：
+  - **模式 A · 外部定时触发**（推荐）：[cron-job.org](https://cron-job.org) 等远程 `workflow_dispatch` + 北京夜间～凌晨若干 GitHub `schedule` 保底  
   - **模式 B · 仅 GitHub Schedule**：只用仓库内 `schedule` 轮询（稳定性不如模式 A）
 - 策略：白天优先等 Cable `bonus ≥ 8`；北京 **20:00** 后可收 `≥ 5`；**22:00** 后可 `≥ 3`；**23:30** 起强制签
 - 推送：每次含北京时间、score、bonus、决策、签到结果、**剩余天数**、**当前积分**
@@ -15,16 +15,23 @@
 
 本地设计稿 / 接口抓包请放在 `design-assets/`（已加入 `.gitignore`，勿提交到公共仓）。
 
+工作流文件：
+
+- 模式 A：[`checkin-external-cron.yml`](.github/workflows/checkin-external-cron.yml) → Actions 名 **GLaDOS签到 · 模式A · 外部定时触发**
+- 模式 B：[`checkin-github-schedule.yml`](.github/workflows/checkin-github-schedule.yml) → Actions 名 **GLaDOS签到 · 模式B · 仅GitHub Schedule**
+
 ## 使用步骤
 
-### 1. Fork / 启用 Actions
+先完成 **公共步骤**，再按你选的模式只看 **模式 A** 或 **模式 B** 一节（二者是两套调度方案，不是「B 做完再叠 A」）。
+
+### 公共步骤（两种模式都要做）
+
+#### 1. Fork / 打开 Actions
 
 1. Fork 或推送本仓库到 GitHub  
-2. 打开 **Actions**，启用工作流  
-3. 推送后请到 Actions → **GLaDOS签到 · 模式B · 仅GitHub Schedule** → `…` → **Disable workflow**（使用模式 A 时避免双跑）  
-4. 保持 **GLaDOS签到 · 模式A · 外部定时触发** 为启用状态
+2. 打开仓库 **Actions**，按提示启用工作流  
 
-### 2. 配置 Secrets
+#### 2. 配置 Secrets
 
 路径：**Settings → Secrets and variables → Actions** → **New repository secret**
 
@@ -37,7 +44,7 @@
 | `AUTO_EXCHANGE` | 否 | 默认关闭；设为 `true` 才自动兑换 |
 | `EXCHANGE_THRESHOLD` | 否 | 默认 `500` |
 
-#### 获取 Cookie（`GLADOS_COOKIE`）— 推荐 Network / Request Headers
+##### 获取 Cookie（`GLADOS_COOKIE`）— 推荐 Network / Request Headers
 
 1. 浏览器登录 GLaDOS（与 `DOMAIN` 同一站点），打开签到页  
 2. 按 **F12** → **Network（网络）**  
@@ -51,7 +58,7 @@
 也可在 F12 → **Application（应用）→ Cookies** 里分别复制四个字段再拼成一行。  
 重新登录或 Cookie 失效后，请同时更新 `GLADOS_COOKIE` 与 `GLADOS_UA`。
 
-#### 获取 UA（`GLADOS_UA`）
+##### 获取 UA（`GLADOS_UA`）
 
 1. 在**同一登录浏览器**打开 GLaDOS 页面，F12 → **Console（控制台）**  
 2. 输入并回车：`navigator.userAgent`  
@@ -60,7 +67,7 @@
    `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ...`  
 5. 多账号：可多行，与 Cookie 行一一对应；只写一行则所有账号共用
 
-#### PushPlus（`NOTIFY`）用哪个 token？
+##### PushPlus（`NOTIFY`）用哪个 token？
 
 打开 [PushPlus](https://www.pushplus.plus/)，个人微信扫码登录后，控制台里常见几类凭证：
 
@@ -81,26 +88,38 @@ pushplus:xxxxxxxxxxxxxxxx
 也可只填 token 本身（不写 `pushplus:` 前缀）。  
 用户 token 与消息 token 的区别见 PushPlus 说明：[用户 token 和消息 token](https://dev.pushplus.plus/doc/help/token.html)。
 
-### 3. 手动跑一次
+#### 3. 先验证 Secrets（可选）
 
-Actions → **GLaDOS签到 · 模式A · 外部定时触发** → **Run workflow**。成功后应收到微信推送。
+在 **模式 A 或模式 B** 任一已启用的工作流里点 **Run workflow**，确认日志与微信推送正常。  
+若两个都还没按下面模式配好，可先临时 Enable 其中一个再手动跑。
 
-### 4. 配置 cron-job.org（模式 A，推荐）
+---
 
-GitHub 自带高频 `schedule` 常延迟或丢任务；用外部定时调用 `workflow_dispatch` 更稳。
+### 模式 A · 外部定时触发（推荐）
 
-**模式 A 分工：** 日常轮询靠 cron-job.org（或同类服务）；同一工作流 [`checkin-external-cron.yml`](.github/workflows/checkin-external-cron.yml) 里仍保留北京 **23:00 / 23:30 / 23:45 / 00:00 / 00:30 / 01:00** 的 GitHub `schedule` 作夜间～凌晨保底。保底仍走 GitHub 调度，**可能延迟或丢弃**，不能当作唯一闹钟。
+适用：要比较稳的定时轮询。日常闹钟在外部；GitHub 只负责跑脚本，并带夜间～凌晨保底。
 
-#### 4.1 创建 GitHub PAT
+1. **Enable** Actions 中的 **GLaDOS签到 · 模式A · 外部定时触发**  
+2. **Disable** **GLaDOS签到 · 模式B · 仅GitHub Schedule**（避免双跑）  
+3. **不要** Disable 模式 A 整个工作流，否则同文件里的夜间 GitHub 保底也会停  
+4. 配置外部定时（见下）  
+5. 用外部任务测一次，或在模式 A 工作流里 **Run workflow** 再确认  
+
+**模式 A 分工：**
+
+- **主轮询**：cron-job.org（等）→ `workflow_dispatch`  
+- **保底**：同一文件 [`checkin-external-cron.yml`](.github/workflows/checkin-external-cron.yml) 内北京 **23:00 / 23:30 / 23:45 / 00:00 / 00:30 / 01:00** 的 GitHub `schedule`（仍可能被 GitHub 延迟或丢弃，不能当唯一闹钟）
+
+#### 模式 A：创建 GitHub PAT
 
 1. GitHub → **Settings → Developer settings → Personal access tokens**  
-2. 建议 **Fine-grained token**：只选本仓库，权限勾选 **Actions: Read and write**（能触发 workflow 即可）  
-3. 生成后复制保存（只显示一次）
+2. 建议 **Fine-grained token**：只选本仓库，权限勾选 **Actions: Read and write**  
+3. 生成后复制保存（只显示一次）；**不要**提交进仓库  
 
-#### 4.2 在 cron-job.org 创建任务
+#### 模式 A：配置 cron-job.org
 
 1. 注册并登录 [cron-job.org](https://cron-job.org)  
-2. 新建 Cronjob，大致配置：  
+2. 新建 Cronjob：  
    - **URL**：  
      `https://api.github.com/repos/<你的用户名>/glados-auto-checkin/actions/workflows/checkin-external-cron.yml/dispatches`  
      （本仓库示例：`https://api.github.com/repos/My-Walker/glados-auto-checkin/actions/workflows/checkin-external-cron.yml/dispatches`）  
@@ -112,19 +131,45 @@ GitHub 自带高频 `schedule` 常延迟或丢任务；用外部定时调用 `wo
      - `Content-Type`: `application/json`  
      - `X-GitHub-Api-Version`: `2022-11-28`（可选，建议带上）  
    - **Body**：`{"ref":"main"}`  
-3. 保存后等一次执行，或在站点里手动测；GitHub Actions 应出现由 `workflow_dispatch` 触发的运行
+3. 保存后等待执行或在站点内手动测；Actions 中应出现 `workflow_dispatch` 触发的运行  
 
-PAT 只放在 cron-job.org，**不要**写进仓库。
+**改模式 A 间隔：** 主频率改 cron-job.org；夜间保底改 `checkin-external-cron.yml` 的 `schedule`（UTC，北京 = UTC+8）：
 
-## 两种调度模式怎么切换
+| 北京时间 | UTC cron |
+|----------|----------|
+| 23:00 | `0 15 * * *` |
+| 23:30 | `30 15 * * *` |
+| 23:45 | `45 15 * * *` |
+| 00:00 | `0 16 * * *` |
+| 00:30 | `30 16 * * *` |
+| 01:00 | `0 17 * * *` |
 
-| 模式 | Actions 名称 | 工作流文件 | 怎么用 |
-|------|--------------|------------|--------|
-| **模式 A**（推荐） | **GLaDOS签到 · 模式A · 外部定时触发** | [`checkin-external-cron.yml`](.github/workflows/checkin-external-cron.yml) | **启用**本工作流；用 cron-job.org（等）POST 做主轮询；**同文件内**还有夜间～凌晨 GitHub `schedule` 保底（时刻见下文）；**Disable** 模式 B |
-| **模式 B** | **GLaDOS签到 · 模式B · 仅GitHub Schedule** | [`checkin-github-schedule.yml`](.github/workflows/checkin-github-schedule.yml) | **暂停**外部定时任务；**Disable** 模式 A；**Enable** 本工作流（轮询与保底都靠本文件里的 `schedule`） |
+---
 
-不要让模式 A 与模式 B 的主轮询同时开着，否则会双跑、双推送。  
-使用 **模式 A** 时：**不要** Disable 整个「模式A · 外部定时触发」工作流，否则夜间 GitHub 保底也会停；只需 Disable **模式 B**，并保证 cron-job.org 在跑。
+### 模式 B · 仅 GitHub Schedule
+
+适用：不配外部服务，只靠 Actions 自带定时。  
+**本节不用配置 cron-job.org / PAT。** 可直接跳过上面「模式 A」整节。
+
+说明：GitHub `schedule` 可能延迟或丢任务，不如模式 A 稳。
+
+1. **不要创建、或暂停** cron-job.org（等）上对本仓库的定时任务  
+2. **Disable** **GLaDOS签到 · 模式A · 外部定时触发**  
+3. **Enable** **GLaDOS签到 · 模式B · 仅GitHub Schedule**  
+4. 等待出现 **Scheduled** 运行，或在该工作流里 **Run workflow** 验证  
+
+默认轮询示例为 `*/30 * * * *`，另有约北京 23:45 保底；间隔按需改 [`checkin-github-schedule.yml`](.github/workflows/checkin-github-schedule.yml)，不限定固定分钟数。
+
+---
+
+### 在模式 A / B 之间切换
+
+| 目标 | 操作 |
+|------|------|
+| 改用 **模式 A** | Enable 模式 A；Disable 模式 B；配置并启动外部定时；**勿** Disable 模式 A 整份工作流 |
+| 改用 **模式 B** | 暂停外部定时；Disable 模式 A；Enable 模式 B |
+
+主轮询双开会双跑、双推送。
 
 ## 签到策略（北京时间）
 
@@ -140,30 +185,14 @@ PAT 只放在 cron-job.org，**不要**写进仓库。
 
 每轮都会查 IQI（质量检测）与 `GET /user/points`。若积分历史中已有当日 `system:checkin`，则**跳过** `POST /user/checkin`，但仍推送 score/bonus 便于统计拥堵。今日未签且策略命中才会真正签到；签到接口返回已签（`code === 1`）视为正常，不报失败。
 
+签到策略时刻在 [`main.js`](main.js) 顶部常量，与调度 cron 无关。
+
 ## 自动兑换（默认关闭）
 
 - 实现：`POST /api/user/exchange`，`{ "planType": "plan500" }`（约 500 积分换 100 天）  
 - 仅当 Secret / 环境变量 `AUTO_EXCHANGE=true`，且当前积分 `≥ EXCHANGE_THRESHOLD`（默认 500）时调用  
 - 兑换失败只记入推送，**不**把签到判失败  
 - 未开启时日志为「兑换已跳过」，**不会发兑换请求**
-
-## 如何改间隔 / 对齐时间
-
-- **模式 A · 主频率**：在 cron-job.org（或你用的外部服务）改任务间隔。  
-- **模式 A · 夜间保底**：改 [`checkin-external-cron.yml`](.github/workflows/checkin-external-cron.yml) 的 `schedule`（值为 **UTC**，北京 = UTC+8）。当前保底点：
-
-| 北京时间 | UTC cron |
-|----------|----------|
-| 23:00 | `0 15 * * *` |
-| 23:30 | `30 15 * * *` |
-| 23:45 | `45 15 * * *` |
-| 00:00 | `0 16 * * *` |
-| 00:30 | `30 16 * * *` |
-| 01:00 | `0 17 * * *` |
-
-- **模式 B**：改 [`checkin-github-schedule.yml`](.github/workflows/checkin-github-schedule.yml) 里的 cron 表达式（间隔按需改，不限定某固定分钟数）。
-
-签到策略里的 20:00 / 22:00 / 23:30 在 [`main.js`](main.js) 顶部常量，与 cron 无关。改 workflow 后需推到**默认分支**。
 
 ## 本地运行
 
