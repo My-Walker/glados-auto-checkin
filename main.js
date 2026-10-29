@@ -198,7 +198,35 @@ async function fetchStatus(base, headers) {
   }
   const leftDays = data?.data?.leftDays
   const n = Number(leftDays)
-  return Number.isFinite(n) ? n : leftDays
+  const email = String(data?.data?.email || '').trim() || null
+  return {
+    leftDays: Number.isFinite(n) ? n : leftDays,
+    email,
+  }
+}
+
+/** 推送里显示的账号标识：优先邮箱，否则回退账号序号 */
+function formatAccountTag(email, accountNo) {
+  return email || `账号${accountNo}`
+}
+
+/**
+ * 多账号用摘要 title；单账号用正文首行（含邮箱 + emoji 结果）
+ * notices: [{ lines, kind }]  kind = fail|ok|done|watch|other
+ */
+function buildPushTitle(notices) {
+  if (!notices.length) return 'GLaDOS 签到'
+  if (notices.length === 1) return notices[0].lines?.[0] || 'GLaDOS 签到'
+
+  const order = ['fail', 'ok', 'done', 'watch', 'other']
+  const emoji = { fail: '⚠️', ok: '✅', done: '📌', watch: '👀', other: '❓' }
+  const counts = Object.fromEntries(order.map((k) => [k, 0]))
+  for (const n of notices) {
+    const kind = counts[n.kind] != null ? n.kind : 'other'
+    counts[kind]++
+  }
+  const parts = order.filter((k) => counts[k] > 0).map((k) => `${emoji[k]}${counts[k]}`)
+  return `GLaDOS · ${notices.length}账号 | ${parts.join(' ')}`
 }
 
 async function fetchPoints(base, headers) {
@@ -279,14 +307,16 @@ async function notifyPushPlus(token, title, lines) {
   }
 }
 
-/** 解析 NOTIFY：支持 pushplus:token / 纯 token / 多行多渠道（本期实现 PushPlus） */
-async function sendNotices(noticeBlocks) {
+/** 解析 NOTIFY：支持 pushplus:token / 纯 token / 多行多渠道（本期实现 PushPlus）
+ *  notices: [{ lines: string[], kind: string }]
+ */
+async function sendNotices(notices) {
   const raw = process.env.NOTIFY
   if (!raw || !String(raw).trim()) {
     console.log('未配置 NOTIFY，跳过推送')
     return
   }
-  if (!noticeBlocks.length) {
+  if (!notices.length) {
     console.log('无通知内容，跳过推送')
     return
   }
@@ -297,7 +327,8 @@ async function sendNotices(noticeBlocks) {
     try {
       if (option.startsWith('console:')) {
         console.log(`\n[通知 ${no}] 控制台输出`)
-        noticeBlocks.forEach((block) => console.log(block.join('\n')))
+        console.log(`title: ${buildPushTitle(notices)}`)
+        notices.forEach((n) => console.log(n.lines.join('\n')))
         continue
       }
 
@@ -309,9 +340,10 @@ async function sendNotices(noticeBlocks) {
         continue
       }
 
-      const flat = noticeBlocks.flatMap((b, i) => (i === 0 ? b : ['', ...b]))
-      const title = flat[0] || 'GLaDOS 签到'
+      const flat = notices.flatMap((n, i) => (i === 0 ? n.lines : ['', ...n.lines]))
+      const title = buildPushTitle(notices)
       console.log(`[通知 ${no}] PushPlus token=${mask(token)}`)
+      console.log(`[通知 ${no}] title: ${title}`)
       await notifyPushPlus(token, title, flat)
       console.log(`[通知 ${no}] PushPlus 推送成功`)
     } catch (err) {
@@ -336,6 +368,7 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
   const headers = commonHeaders(cookie, ua, domain)
   const lines = []
   let failed = false
+  let kind = 'other'
 
   console.log(`\n[账号 ${accountNo}] ---------- 开始 ----------`)
   console.log(`[账号 ${accountNo}] Cookie: ${mask(cookie)}`)
@@ -349,6 +382,7 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
   let checkinMessage = ''
   let signStatus = ''
   let leftDays = null
+  let email = null
   let currentPoints = null
   let exchangeNote = ''
 
@@ -387,6 +421,7 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
       const gained =
         todayCheckin.change != null ? `+${todayCheckin.change}` : '有记录'
       titleLabel = '📌 今日已签·本轮仅检测'
+      kind = 'done'
       signStatus = `今日已签（${gained}）`
       checkinMessage = '跳过'
       console.log(`[账号 ${accountNo}] 本轮跳过（今日已签；策略=${strategyLabel}）`)
@@ -396,10 +431,12 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
       console.log(`[账号 ${accountNo}] 签到: code=${action.code} | ${action.message}`)
       if (action.already) {
         titleLabel = '📌 接口显示已签'
+        kind = 'done'
         signStatus = '今日已签（接口返回）'
         checkinMessage = '接口已签'
       } else {
         titleLabel = `✅ 签到成功·${formatTierShort(decision)}`
+        kind = 'ok'
         checkinMessage = '签到成功'
       }
       // 签到后刷新积分（含历史）
@@ -415,14 +452,19 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
       }
     } else {
       titleLabel = `👀 观望 · Cable+${bonus}`
+      kind = 'watch'
       signStatus = '今日未签'
       checkinMessage = '跳过'
       console.log(`[账号 ${accountNo}] 本轮跳过（观望）`)
     }
 
     try {
-      leftDays = await fetchStatus(base, headers)
-      console.log(`[账号 ${accountNo}] 剩余天数: ${formatDays(leftDays)}`)
+      const st = await fetchStatus(base, headers)
+      leftDays = st.leftDays
+      email = st.email
+      console.log(
+        `[账号 ${accountNo}] 邮箱: ${email || '未知'} | 剩余天数: ${formatDays(leftDays)}`
+      )
     } catch (e) {
       console.warn(`[账号 ${accountNo}] 状态查询失败: ${e.message}`)
     }
@@ -438,7 +480,9 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
           console.log(`[账号 ${accountNo}] ${exchangeNote}`)
           if (ex.remain != null) currentPoints = ex.remain
           try {
-            leftDays = await fetchStatus(base, headers)
+            const st = await fetchStatus(base, headers)
+            leftDays = st.leftDays
+            if (st.email) email = st.email
           } catch {
             /* ignore */
           }
@@ -455,8 +499,9 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
       console.log(`[账号 ${accountNo}] ${exchangeNote}`)
     }
 
+    const tag = formatAccountTag(email, accountNo)
     lines.push(
-      `【账号${accountNo}】${titleLabel}`,
+      `【${tag}】${titleLabel}`,
       `北京时间: ${bj.label}`,
       `IQI score: ${score ?? '无'} | Cable: +${bonus}`,
       `策略: ${strategyLabel}`,
@@ -468,9 +513,20 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
     )
   } catch (err) {
     failed = true
+    kind = 'fail'
     console.error(`[账号 ${accountNo}] 失败: ${err.message}`)
+    if (!email) {
+      try {
+        const st = await fetchStatus(base, headers)
+        leftDays = st.leftDays
+        email = st.email
+      } catch {
+        /* ignore */
+      }
+    }
+    const tag = formatAccountTag(email, accountNo)
     lines.push(
-      `【账号${accountNo}】⚠️ 失败`,
+      `【${tag}】⚠️ 失败`,
       `北京时间: ${bj.label}`,
       `IQI score: ${score ?? '无'} | Cable: +${bonus}`,
       `策略: ${strategyLabel}`,
@@ -481,7 +537,7 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
     )
   }
 
-  return { failed, lines }
+  return { failed, lines, kind }
 }
 
 async function main() {
@@ -492,14 +548,16 @@ async function main() {
   const cookies = splitLines(process.env.GLADOS_COOKIE)
   if (!cookies.length) {
     console.error('未设置 GLADOS_COOKIE（Cookie），退出')
-    const failLines = [
-      [
-        '⚠️ 【配置错误】缺少 Cookie',
-        `北京时间: ${bj.label}`,
-        '请在仓库 Secrets 中配置 GLADOS_COOKIE',
-      ],
-    ]
-    await sendNotices(failLines)
+    await sendNotices([
+      {
+        kind: 'fail',
+        lines: [
+          '⚠️ 【配置错误】缺少 Cookie',
+          `北京时间: ${bj.label}`,
+          '请在仓库 Secrets 中配置 GLADOS_COOKIE',
+        ],
+      },
+    ])
     process.exit(1)
   }
 
@@ -513,13 +571,13 @@ async function main() {
   console.log(`AUTO_EXCHANGE: ${autoExchange} | THRESHOLD: ${exchangeThreshold}`)
   console.log(`NOTIFY: ${process.env.NOTIFY ? '已配置' : '未配置'}`)
 
-  const noticeBlocks = []
+  const notices = []
   let hasRealError = false
 
   for (const [index, cookie] of cookies.entries()) {
     const accountNo = index + 1
     const ua = agents[index] || agents[0] || DEFAULT_UA
-    const { failed, lines } = await processAccount(
+    const { failed, lines, kind } = await processAccount(
       accountNo,
       cookie,
       ua,
@@ -528,11 +586,11 @@ async function main() {
       exchangeThreshold,
       bj
     )
-    noticeBlocks.push(lines)
+    notices.push({ lines, kind })
     if (failed) hasRealError = true
   }
 
-  await sendNotices(noticeBlocks)
+  await sendNotices(notices)
 
   console.log('\n========== 任务结束 ==========')
   if (hasRealError) {
