@@ -211,22 +211,30 @@ function formatAccountTag(email, accountNo) {
 }
 
 /**
- * 多账号用摘要 title；单账号用正文首行（含邮箱 + emoji 结果）
- * notices: [{ lines, kind }]  kind = fail|ok|done|watch|other
+ * PushPlus 缩略图 title 用短中文（emoji 在工单卡片里常不显示）
+ * kind: fail|ok|done|watch|other；gained 为今日签到积分（可空）
  */
+function formatThumbPart(kind, gained) {
+  const pts =
+    gained != null && Number.isFinite(Number(gained)) ? `+${Number(gained)}` : ''
+  switch (kind) {
+    case 'ok':
+      return `★成功${pts}`
+    case 'done':
+      return `已签${pts}`
+    case 'watch':
+      return '观望'
+    case 'fail':
+      return '失败'
+    default:
+      return '未知'
+  }
+}
+
+/** 按账号顺序用 | 拼接缩略图 title；notices: [{ titlePart, lines, kind }] */
 function buildPushTitle(notices) {
   if (!notices.length) return 'GLaDOS 签到'
-  if (notices.length === 1) return notices[0].lines?.[0] || 'GLaDOS 签到'
-
-  const order = ['fail', 'ok', 'done', 'watch', 'other']
-  const emoji = { fail: '⚠️', ok: '✅', done: '📌', watch: '👀', other: '❓' }
-  const counts = Object.fromEntries(order.map((k) => [k, 0]))
-  for (const n of notices) {
-    const kind = counts[n.kind] != null ? n.kind : 'other'
-    counts[kind]++
-  }
-  const parts = order.filter((k) => counts[k] > 0).map((k) => `${emoji[k]}${counts[k]}`)
-  return `GLaDOS · ${notices.length}账号 | ${parts.join(' ')}`
+  return notices.map((n) => n.titlePart || formatThumbPart(n.kind, n.gained)).join(' | ')
 }
 
 async function fetchPoints(base, headers) {
@@ -308,7 +316,7 @@ async function notifyPushPlus(token, title, lines) {
 }
 
 /** 解析 NOTIFY：支持 pushplus:token / 纯 token / 多行多渠道（本期实现 PushPlus）
- *  notices: [{ lines: string[], kind: string }]
+ *  notices: [{ lines, kind, titlePart?, gained? }]
  */
 async function sendNotices(notices) {
   const raw = process.env.NOTIFY
@@ -369,6 +377,7 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
   const lines = []
   let failed = false
   let kind = 'other'
+  let gainedPoints = null
 
   console.log(`\n[账号 ${accountNo}] ---------- 开始 ----------`)
   console.log(`[账号 ${accountNo}] Cookie: ${mask(cookie)}`)
@@ -418,8 +427,8 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
     // 3) 仅「今日未签」且策略命中时才 POST checkin；已签仍做检测与推送
     // 推送职责：标题=结果；策略=档位；签到状态=事实；本轮=动作（变体 B）
     if (todayCheckin) {
-      const gained =
-        todayCheckin.change != null ? `+${todayCheckin.change}` : '有记录'
+      gainedPoints = todayCheckin.change
+      const gained = gainedPoints != null ? `+${gainedPoints}` : '有记录'
       titleLabel = '📌 今日已签·本轮仅检测'
       kind = 'done'
       signStatus = `今日已签（${gained}）`
@@ -444,8 +453,11 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
         const pointsInfo = await fetchPoints(base, headers)
         currentPoints = pointsInfo.points
         todayCheckin = findTodayCheckin(pointsInfo.history, bj.dateStr)
-        if (todayCheckin && !action.already) {
-          signStatus = `今日已签（+${todayCheckin.change ?? '?'}）`
+        if (todayCheckin) {
+          gainedPoints = todayCheckin.change
+          if (!action.already) {
+            signStatus = `今日已签（+${todayCheckin.change ?? '?'}）`
+          }
         }
       } catch (e) {
         console.warn(`[账号 ${accountNo}] 签到后积分刷新失败: ${e.message}`)
@@ -501,7 +513,8 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
 
     const tag = formatAccountTag(email, accountNo)
     lines.push(
-      `【${tag}】${titleLabel}`,
+      `【${tag}】`,
+      titleLabel,
       `北京时间: ${bj.label}`,
       `IQI score: ${score ?? '无'} | Cable: +${bonus}`,
       `策略: ${strategyLabel}`,
@@ -526,7 +539,8 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
     }
     const tag = formatAccountTag(email, accountNo)
     lines.push(
-      `【${tag}】⚠️ 失败`,
+      `【${tag}】`,
+      '⚠️ 失败',
       `北京时间: ${bj.label}`,
       `IQI score: ${score ?? '无'} | Cable: +${bonus}`,
       `策略: ${strategyLabel}`,
@@ -537,7 +551,8 @@ async function processAccount(accountNo, cookie, ua, domain, autoExchange, excha
     )
   }
 
-  return { failed, lines, kind }
+  const titlePart = formatThumbPart(kind, gainedPoints)
+  return { failed, lines, kind, gained: gainedPoints, titlePart }
 }
 
 async function main() {
@@ -551,6 +566,7 @@ async function main() {
     await sendNotices([
       {
         kind: 'fail',
+        titlePart: '失败',
         lines: [
           '⚠️ 【配置错误】缺少 Cookie',
           `北京时间: ${bj.label}`,
@@ -577,7 +593,7 @@ async function main() {
   for (const [index, cookie] of cookies.entries()) {
     const accountNo = index + 1
     const ua = agents[index] || agents[0] || DEFAULT_UA
-    const { failed, lines, kind } = await processAccount(
+    const { failed, lines, kind, gained, titlePart } = await processAccount(
       accountNo,
       cookie,
       ua,
@@ -586,7 +602,7 @@ async function main() {
       exchangeThreshold,
       bj
     )
-    notices.push({ lines, kind })
+    notices.push({ lines, kind, gained, titlePart })
     if (failed) hasRealError = true
   }
 
